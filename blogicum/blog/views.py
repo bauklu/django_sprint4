@@ -1,40 +1,25 @@
-from django.shortcuts import get_object_or_404, render, redirect
-
-from django.utils import timezone
-
-from django.views.generic import DeleteView, DetailView, ListView
-# from django.views.generic import UpdateView
-
-from django.urls import reverse_lazy
-# from django.urls import reverse
-
-from .forms import PostForm, CommentsForm, ProfileForm
-
 from django.contrib.auth.mixins import LoginRequiredMixin
-
-from django.contrib.auth.mixins import UserPassesTestMixin
-
-from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import get_object_or_404, render, redirect
+from django.urls import reverse_lazy
+from django.views.generic import DeleteView, DetailView, ListView
 from django.http import Http404
-
-from blog.models import Post, Category, Comments
-# from blog.models import PostQuerySet, PublishedPostManager
-
-
 from django.core.paginator import Paginator
 from django.db.models import Count
+from django.utils import timezone
+
+from .forms import PostForm, CommentsForm, ProfileForm
+from blog.models import Post, Category, Comments
+from blog.mixins import OnlyAuthorMixin
 
 
 POSTS_PER_PAGE = 10
 
 
-class OnlyAuthorMixin(UserPassesTestMixin):
-
-    def test_func(self):
-        object = self.get_object()
-        return object.author == self.request.user
+def ordered_annotated_posts(posts):
+    return posts.order_by('-pub_date').annotate(
+        comment_count=Count('comments'))
 
 
 class PostListView(ListView):
@@ -45,13 +30,9 @@ class PostListView(ListView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        # queryset = queryset.filter(
-        #     is_published=True, category__is_published=True
-        # ).exclude(pub_date__gt=timezone.now()).annotate(
-        #     comment_count=Count('comments')
-        # )
-        queryset = Post.filtered_posts.all().order_by('-pub_date').annotate(
-            comment_count=Count('comments'))
+        # queryset = Post.filtered_posts.all().order_by('-pub_date').annotate(
+        #     comment_count=Count('comments'))
+        queryset = ordered_annotated_posts(Post.filtered_posts.all())
         return queryset
 
 
@@ -66,7 +47,6 @@ def create_post(request):
         instance = form.save(commit=False)
         instance.author = request.user
         instance.save()
-        # return redirect('blog:profile', request.user.username)
         return redirect('blog:profile', instance.author)
     return render(request, 'blog/create.html', context)
 
@@ -82,30 +62,6 @@ def edit_post(request, post_id):
         form.save()
         return redirect('blog:post_detail', pk=post_id)
     return render(request, 'blog/create.html', context)
-
-
-# class PostUpdateView(OnlyAuthorMixin, UpdateView):
-#     model = Post
-#     form_class = PostForm
-#     pk_url_kwarg = 'post_id'
-#     template_name = 'blog/create.html'
-
-
-# class PostUpdateView(LoginRequiredMixin, UpdateView):
-#     model = Post
-#     form_class = PostForm
-#     pk_url_kwarg = 'post_id'
-#     template_name = 'blog/create.html'
-
-#     def dispatch(self, request, *args, **kwargs):
-#         post = get_object_or_404(Post, pk=self.kwargs.get('post_id'))
-#         if post.author != request.user:
-#             return redirect('blog:post_detail',
-#             post_id = self.kwargs['post_id'])
-#         return super().dispatch(request, *args, **kwargs)
-#     def get_success_url(self):
-#         return reverse_lazy('blog:post_detail',
-#         kwargs={'post_id': self.kwargs['post_id']})
 
 
 class PostDeleteView(OnlyAuthorMixin, DeleteView):
@@ -145,13 +101,12 @@ class PostDetailView(LoginRequiredMixin, DetailView):
 
 def category_posts(request, category):
     template = 'blog/category.html'
-    post_list = Post.filtered_posts.all().filter(
-        category__slug=category
-    ).order_by('-pub_date').annotate(comment_count=Count('comments'))
-    # if not post_list:
-    #     raise Http404(
-    #         'Posts not found'
-    #     )
+    post_list = ordered_annotated_posts(Post.filtered_posts.all().filter(
+        category__slug=category)
+    )
+    # post_list = Post.filtered_posts.all().filter(
+    #     category__slug=category
+    # ).order_by('-pub_date').annotate(comment_count=Count('comments'))
     category_obj = get_object_or_404(
         Category, slug=category, is_published=True)
     paginator = Paginator(post_list, POSTS_PER_PAGE)
@@ -173,9 +128,11 @@ class ProfileView(ListView):
     def get_queryset(self):
         queryset = super().get_queryset()
         author = self.kwargs['username']
-        queryset = queryset.filter(author__username=author).annotate(
-            comment_count=Count('comments')
-        )
+        queryset = ordered_annotated_posts(
+            queryset.filter(author__username=author))
+        # queryset = queryset.filter(author__username=author).annotate(
+        #     comment_count=Count('comments')
+        # )
         if author != self.request.user.username:
             queryset = queryset.filter(
                 is_published=True, category__is_published=True
@@ -239,21 +196,3 @@ def delete_comment(request, post_id, comment_id):
         instance.delete()
         return redirect('blog:post_detail', pk=post_id)
     return render(request, 'blog/comment.html', context)
-
-
-# class CommentDeleteView(OnlyAuthorMixin, DeleteView):
-#     model = Comments
-#     form_class = CommentsForm
-#     template_name = 'blog/comment.html'
-#     pk_url_kwarg = 'comment_id'
-
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         instance = get_object_or_404(
-#             Comments,
-#             pk=self.kwargs.get('comment_id')
-#         )
-#         form = CommentsForm(instance=instance)
-#         context = {'comment': form}
-#         return context
-#     success_url = reverse_lazy('blog:index')
