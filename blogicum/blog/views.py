@@ -6,20 +6,15 @@ from django.urls import reverse_lazy
 from django.views.generic import DeleteView, DetailView, ListView
 from django.http import Http404
 from django.core.paginator import Paginator
-from django.db.models import Count
 from django.utils import timezone
 
 from .forms import PostForm, CommentsForm, ProfileForm
 from blog.models import Post, Category, Comments
 from blog.mixins import OnlyAuthorMixin
+from blog.ordered_annotated_posts import get_ordered_annotated_posts
 
 
 POSTS_PER_PAGE = 10
-
-
-def ordered_annotated_posts(posts):
-    return posts.order_by('-pub_date').annotate(
-        comment_count=Count('comments'))
 
 
 class PostListView(ListView):
@@ -30,9 +25,7 @@ class PostListView(ListView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        # queryset = Post.filtered_posts.all().order_by('-pub_date').annotate(
-        #     comment_count=Count('comments'))
-        queryset = ordered_annotated_posts(Post.filtered_posts.all())
+        queryset = get_ordered_annotated_posts(Post.filtered_posts.all())
         return queryset
 
 
@@ -101,15 +94,12 @@ class PostDetailView(LoginRequiredMixin, DetailView):
 
 def category_posts(request, category):
     template = 'blog/category.html'
-    post_list = ordered_annotated_posts(Post.filtered_posts.all().filter(
+    posts = get_ordered_annotated_posts(Post.filtered_posts.all().filter(
         category__slug=category)
     )
-    # post_list = Post.filtered_posts.all().filter(
-    #     category__slug=category
-    # ).order_by('-pub_date').annotate(comment_count=Count('comments'))
     category_obj = get_object_or_404(
         Category, slug=category, is_published=True)
-    paginator = Paginator(post_list, POSTS_PER_PAGE)
+    paginator = Paginator(posts, POSTS_PER_PAGE)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     context = {'category': category_obj,
@@ -128,11 +118,8 @@ class ProfileView(ListView):
     def get_queryset(self):
         queryset = super().get_queryset()
         author = self.kwargs['username']
-        queryset = ordered_annotated_posts(
+        queryset = get_ordered_annotated_posts(
             queryset.filter(author__username=author))
-        # queryset = queryset.filter(author__username=author).annotate(
-        #     comment_count=Count('comments')
-        # )
         if author != self.request.user.username:
             queryset = queryset.filter(
                 is_published=True, category__is_published=True
