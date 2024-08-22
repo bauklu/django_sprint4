@@ -11,7 +11,7 @@ from django.utils import timezone
 from .forms import PostForm, CommentsForm, ProfileForm
 from blog.models import Post, Category, Comments
 from blog.mixins import OnlyAuthorMixin
-from blog.ordered_annotated_posts import get_ordered_annotated_posts
+from blog.ordered_posts import get_ordered_annotated_posts
 
 
 POSTS_PER_PAGE = 10
